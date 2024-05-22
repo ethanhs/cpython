@@ -45,6 +45,18 @@ typedef struct {
     PyThread_type_lock lock;
 } ZSTDDecompressor;
 
+static int
+grow_buffer(PyObject **buf, Py_ssize_t max_length)
+{
+    Py_ssize_t size = PyBytes_GET_SIZE(*buf);
+    Py_ssize_t newsize = size + (size >> 3) + 6;
+
+    if (max_length > 0 && newsize > max_length) {
+        newsize = max_length;
+    }
+
+    return _PyBytes_Resize(buf, newsize);
+}
 
 /* ZSTDCompressor class*/
 
@@ -53,8 +65,8 @@ compress(ZSTDCompressor *c, char *data, size_t len) {
     PyObject *result;
     Py_ssize_t data_size = 0;
 
-    size_t const buff_out_size = ZSTD_CStreamOutSize();
-    result = PyBytes_FromStringAndSize(NULL, buff_out_size);
+    size_t const out_buf_size = ZSTD_CStreamOutSize();
+    result = PyBytes_FromStringAndSize(NULL, out_buf_size);
     if (result == NULL) {
         return NULL;
     }
@@ -62,17 +74,23 @@ compress(ZSTDCompressor *c, char *data, size_t len) {
     char* out_buf =  (char *)PyBytes_AS_STRING(result);
 
     ZSTD_inBuffer inBuf = { data, len, 0};
+    ZSTD_outBuffer outBuf = { out_buf, out_buf_size, 0 };
 
-    size_t remaining;
+    int finished;
     do {
-        ZSTD_outBuffer outBuf = { out_buf, buff_out_size, 0 };
         Py_BEGIN_ALLOW_THREADS
-        remaining = ZSTD_compressStream2(c->stream, )
+        size_t remaining = ZSTD_compressStream2(c->stream, &outBuf, &inBuf, ZSTD_e_continue);
+        // TODO: check remaining isn't an error
+        // All input bytes written, we're done here.
+        if (inBuf.pos == inBuf.size) {
+            break;
+        }
+        //if (outBuf.size - outBuf.pos < )
         Py_END_ALLOW_THREADS
-    } while {};
+    } while (!finished);
 
 
 error:
-    OutputBuffer_OnError(&buffer);
+
     return NULL;
 }
